@@ -1,0 +1,7 @@
+fastapi[standard]
+sqlalchemy
+alembic
+psycopg2-binary
+google-genai
+python-multipart
+python-dotenv
