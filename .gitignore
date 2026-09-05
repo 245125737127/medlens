@@ -1,0 +1,24 @@
+# Node
+node_modules/
+.next/
+.pnp
+.pnp.js
+out/
+build/
+.npm/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.env
+.venv
+*.sqlite3
+backend/medlens.db
+backend/uploads/
+
+# OS
+.DS_Store
+Thumbs.db
