@@ -9,21 +9,39 @@ import schemas
 import models
 import shutil
 import os
+import uuid
 from document_processor import process_document_and_save
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.responses import FileResponse
 
 app = FastAPI(title="MedLens API")
 
-# Mount uploads directory for static file serving
+security = HTTPBearer()
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    # Basic token check for prototype security
+    if credentials.credentials != "DEMO_TOKEN":
+        raise HTTPException(status_code=401, detail="Invalid token")
+    return credentials.credentials
+
+# Removed StaticFiles mount to protect uploads with auth dependency
 os.makedirs("uploads", exist_ok=True)
-app.mount("/uploads", StaticFiles(directory="uploads"), name="uploads")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.get("/uploads/{filename}")
+def get_upload(filename: str, user: str = Depends(get_current_user)):
+    # Protect static files with auth
+    file_path = os.path.join("uploads", filename)
+    if not os.path.exists(file_path):
+        raise HTTPException(status_code=404, detail="File not found")
+    return FileResponse(file_path)
 
 @app.get("/health")
 def health_check(db: Session = Depends(get_db)):
@@ -35,7 +53,7 @@ def health_check(db: Session = Depends(get_db)):
     return {"status": "ok", "db_status": db_status}
 
 @app.post("/api/patients", response_model=PatientResponse)
-def create_patient(patient: PatientCreate, db: Session = Depends(get_db)):
+def create_patient(patient: PatientCreate, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     db_patient = models.Patient(**patient.model_dump())
     db.add(db_patient)
     db.commit()
@@ -43,7 +61,7 @@ def create_patient(patient: PatientCreate, db: Session = Depends(get_db)):
     return db_patient
 
 @app.get("/api/patients/{patient_id}", response_model=PatientDetailResponse)
-def get_patient(patient_id: int, db: Session = Depends(get_db)):
+def get_patient(patient_id: int, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     patient = db.query(models.Patient).filter(models.Patient.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
@@ -54,17 +72,34 @@ async def upload_document(
     patient_id: int, 
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...), 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    user: str = Depends(get_current_user)
 ):
+    ALLOWED_TYPES = ["application/pdf", "image/jpeg", "image/png"]
+    MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+    
+    if file.content_type not in ALLOWED_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid file type")
+        
+    file.file.seek(0, 2)
+    file_size = file.file.tell()
+    file.file.seek(0)
+    
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(status_code=400, detail="File too large")
+        
+    ext = os.path.splitext(file.filename)[1]
+    safe_filename = f"{uuid.uuid4()}{ext}"
+
     os.makedirs("uploads", exist_ok=True)
-    file_path = f"uploads/{file.filename}"
+    file_path = f"uploads/{safe_filename}"
     
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
         
     db_document = models.Document(
         patient_id=patient_id,
-        filename=file.filename,
+        filename=safe_filename,
         file_type=file.content_type,
         status="Processing"
     )
@@ -80,9 +115,9 @@ async def upload_document(
 from schemas import VerificationRequest
 
 @app.post("/api/patients/{patient_id}/verify/conflict/{conflict_id}")
-def verify_conflict(patient_id: int, conflict_id: int, req: VerificationRequest, db: Session = Depends(get_db)):
+def verify_conflict(patient_id: int, conflict_id: int, req: VerificationRequest, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     conflict = db.query(models.Conflict).filter(models.Conflict.id == conflict_id).first()
-    if not conflict:
+    if not conflict or conflict.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="Conflict not found")
         
     if req.action == "accept":
@@ -96,9 +131,9 @@ def verify_conflict(patient_id: int, conflict_id: int, req: VerificationRequest,
     return {"status": "ok"}
 
 @app.post("/api/patients/{patient_id}/verify/lab/{lab_id}")
-def verify_lab(patient_id: int, lab_id: int, req: VerificationRequest, db: Session = Depends(get_db)):
+def verify_lab(patient_id: int, lab_id: int, req: VerificationRequest, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     lab = db.query(models.LabResult).filter(models.LabResult.id == lab_id).first()
-    if not lab:
+    if not lab or lab.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="Lab result not found")
         
     if req.action == "accept":
@@ -116,9 +151,9 @@ def verify_lab(patient_id: int, lab_id: int, req: VerificationRequest, db: Sessi
     return {"status": "ok"}
 
 @app.post("/api/patients/{patient_id}/verify/med/{med_id}")
-def verify_medication(patient_id: int, med_id: int, req: VerificationRequest, db: Session = Depends(get_db)):
+def verify_medication(patient_id: int, med_id: int, req: VerificationRequest, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     med = db.query(models.Medication).filter(models.Medication.id == med_id).first()
-    if not med:
+    if not med or med.patient_id != patient_id:
         raise HTTPException(status_code=404, detail="Medication not found")
         
     if req.action == "accept":
@@ -133,7 +168,7 @@ def verify_medication(patient_id: int, med_id: int, req: VerificationRequest, db
     return {"status": "ok"}
 
 @app.get("/api/patients/{patient_id}/summary", response_model=schemas.SummaryResponse)
-def get_patient_summary(patient_id: int, db: Session = Depends(get_db)):
+def get_patient_summary(patient_id: int, db: Session = Depends(get_db), user: str = Depends(get_current_user)):
     patient = db.query(models.Patient).filter(models.Patient.id == patient_id).first()
     if not patient:
         raise HTTPException(status_code=404, detail="Patient not found")
