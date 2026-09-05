@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from database import get_db, engine, Base
-from schemas import PatientCreate, PatientResponse, DocumentResponse, PatientDetailResponse
+from schemas import PatientCreate, PatientResponse, DocumentResponse, PatientDetailResponse, VerificationRequest
 import schemas
 import models
 import shutil
@@ -112,7 +112,6 @@ async def upload_document(
     
     return db_document
 
-from schemas import VerificationRequest
 
 @app.post("/api/patients/{patient_id}/verify/conflict/{conflict_id}")
 def verify_conflict(patient_id: int, conflict_id: int, req: VerificationRequest, db: Session = Depends(get_db), user: str = Depends(get_current_user)):

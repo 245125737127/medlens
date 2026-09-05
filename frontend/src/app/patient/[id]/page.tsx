@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { useParams } from "next/navigation";
 
 type LabResult = {
@@ -73,10 +73,11 @@ export default function PatientDashboard() {
   const [generatingSummary, setGeneratingSummary] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchPatientData = async () => {
+  const fetchPatientData = useCallback(async () => {
     if (!patientId) return;
     try {
-      const res = await fetch(`http://localhost:8000/api/patients/${patientId}`);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const res = await fetch(`${API_URL}/api/patients/${patientId}`);
       if (res.ok) {
         const data = await res.json();
         setPatientData(data);
@@ -86,9 +87,10 @@ export default function PatientDashboard() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [patientId]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchPatientData();
     // Poll every 5 seconds if a document is processing
     const interval = setInterval(() => {
@@ -97,7 +99,7 @@ export default function PatientDashboard() {
       }
     }, 5000);
     return () => clearInterval(interval);
-  }, [patientId, patientData?.documents]);
+  }, [patientId, patientData?.documents, fetchPatientData]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -113,7 +115,8 @@ export default function PatientDashboard() {
     formData.append("file", file);
 
     try {
-      const response = await fetch(`http://localhost:8000/api/patients/${patientId}/documents`, {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const response = await fetch(`${API_URL}/api/patients/${patientId}/documents`, {
         method: "POST",
         body: formData,
       });
@@ -125,6 +128,7 @@ export default function PatientDashboard() {
       setUploadStatus({ message: "Document uploaded successfully! Processing...", isError: false });
       fetchPatientData();
     } catch (err) {
+      console.error("Upload error", err);
       setUploadStatus({ message: "Failed to upload document", isError: true });
     } finally {
       setUploading(false);
@@ -150,7 +154,8 @@ export default function PatientDashboard() {
 
   const handleVerify = async (type: 'conflict' | 'lab' | 'med', id: number, action: 'accept' | 'reject' | 'edit', editedValue?: string) => {
     try {
-      const res = await fetch(`http://localhost:8000/api/patients/${patientId}/verify/${type}/${id}`, {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const res = await fetch(`${API_URL}/api/patients/${patientId}/verify/${type}/${id}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, edited_value: editedValue })
@@ -166,7 +171,8 @@ export default function PatientDashboard() {
   const generateSummary = async () => {
     setGeneratingSummary(true);
     try {
-      const res = await fetch(`http://localhost:8000/api/patients/${patientId}/summary`);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+      const res = await fetch(`${API_URL}/api/patients/${patientId}/summary`);
       if (res.ok) {
         const data = await res.json();
         setSummary(data.summary_text);
@@ -228,9 +234,17 @@ export default function PatientDashboard() {
                 onDrop={handleDrop}
                 onDragOver={handleDragOver}
                 onClick={() => fileInputRef.current?.click()}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    fileInputRef.current?.click();
+                  }
+                }}
               >
                 <input type="file" className="hidden" ref={fileInputRef} onChange={handleFileChange} accept=".pdf,image/*" />
-                <svg className="mx-auto h-8 w-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="mx-auto h-8 w-8 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
                 </svg>
                 <p className="mt-2 text-sm text-gray-600 font-medium">Click to upload or drag & drop</p>
@@ -278,7 +292,7 @@ export default function PatientDashboard() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
               <div className="p-6 border-b bg-gray-50 flex justify-between items-center">
                 <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-                  <svg className="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
+                  <svg className="w-5 h-5 mr-2 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
                   AI Clinical Summary
                 </h2>
                 <button 
@@ -305,7 +319,7 @@ export default function PatientDashboard() {
             <div className="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
               <div className="p-6 border-b bg-gray-50 flex justify-between items-center">
                 <h2 className="text-xl font-semibold text-gray-800 flex items-center">
-                  <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                  <svg className="w-5 h-5 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                   Medical Timeline & Trends
                 </h2>
               </div>
@@ -318,10 +332,11 @@ export default function PatientDashboard() {
                     .map((event, index, sortedEvents) => {
                       let trend = null;
                       if (event.type === 'lab') {
+                        const labEvent = event as LabResult & { type: 'lab' };
                         // Find previous matching test to show trend
-                        const previousTest = sortedEvents.find((e, i) => i > index && e.type === 'lab' && (e as any).test_name === (event as any).test_name);
-                        if (previousTest && (previousTest as any).value !== undefined) {
-                          const diff = (event as any).value - (previousTest as any).value;
+                        const previousTest = sortedEvents.find((e, i) => i > index && e.type === 'lab' && (e as LabResult & { type: 'lab' }).test_name === labEvent.test_name) as (LabResult & { type: 'lab' }) | undefined;
+                        if (previousTest && previousTest.value !== undefined) {
+                          const diff = labEvent.value - previousTest.value;
                           if (diff > 0) trend = <span className="text-red-500 font-semibold ml-2">↑ +{diff.toFixed(2)}</span>;
                           else if (diff < 0) trend = <span className="text-green-500 font-semibold ml-2">↓ {diff.toFixed(2)}</span>;
                           else trend = <span className="text-gray-400 font-semibold ml-2">→ No Change</span>;
@@ -335,12 +350,12 @@ export default function PatientDashboard() {
                           <div className="bg-gray-50 border p-3 rounded">
                             {event.type === 'lab' ? (
                               <p className="text-gray-800 text-sm">
-                                <strong>Lab Result:</strong> {(event as any).test_name} - {(event as any).value} {(event as any).unit} 
+                                <strong>Lab Result:</strong> {(event as LabResult & { type: 'lab' }).test_name} - {(event as LabResult & { type: 'lab' }).value} {(event as LabResult & { type: 'lab' }).unit} 
                                 {trend}
                               </p>
                             ) : (
                               <p className="text-gray-800 text-sm">
-                                <strong>Medication:</strong> {(event as any).medication_name} {(event as any).strength_dose}
+                                <strong>Medication:</strong> {(event as Medication & { type: 'med' }).medication_name} {(event as Medication & { type: 'med' }).strength_dose}
                               </p>
                             )}
                           </div>
@@ -360,17 +375,17 @@ export default function PatientDashboard() {
                 <div className="flex justify-between items-center mb-2">
                   <h2 className="text-md font-semibold text-gray-800">Source Viewer: {selectedSource.filename} {selectedSource.page && `(Page ${selectedSource.page})`}</h2>
                   <button onClick={() => setSelectedSource(null)} className="text-gray-400 hover:text-red-500">
-                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
                   </button>
                 </div>
                 <div className="flex-1 border bg-gray-100 rounded flex items-center justify-center overflow-hidden relative">
                   {/* Using object tag to render pdfs or images */}
                   <object 
-                    data={`http://localhost:8000/uploads/${selectedSource.filename}#page=${selectedSource.page || 1}`} 
+                    data={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/uploads/${selectedSource.filename}#page=${selectedSource.page || 1}`} 
                     type="application/pdf"
-                    className="w-full h-full"
+                    className="w-full h-[600px] border border-gray-200"
                   >
-                    <p>Unable to display document directly. <a href={`http://localhost:8000/uploads/${selectedSource.filename}`} target="_blank" className="text-blue-500 underline" rel="noreferrer">Download here</a>.</p>
+                    <p>Unable to display document directly. <a href={`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/uploads/${selectedSource.filename}`} target="_blank" className="text-blue-500 underline" rel="noreferrer">Download here</a>.</p>
                   </object>
                 </div>
               </div>
@@ -383,7 +398,7 @@ export default function PatientDashboard() {
               <div className="bg-orange-50 rounded-lg shadow-sm border border-orange-200 overflow-hidden mb-6">
                 <div className="p-4 border-b border-orange-200 bg-orange-100 flex justify-between items-center">
                   <h2 className="text-lg font-semibold text-orange-800 flex items-center">
-                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+                    <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
                     Action Required: Human Verification
                   </h2>
                 </div>
@@ -504,7 +519,7 @@ export default function PatientDashboard() {
                             onClick={() => openSourceViewer(lab.source_document, lab.source_page)}
                             className="text-blue-600 hover:text-blue-900 text-xs flex items-center justify-end w-full"
                           >
-                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                            <svg className="w-4 h-4 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                             View
                           </button>
                         </td>
@@ -536,7 +551,7 @@ export default function PatientDashboard() {
                         {med.confidence < 0.8 && !med.verified && <p className="text-[10px] text-red-500 font-bold">Needs Review</p>}
                       </div>
                       <button onClick={() => openSourceViewer(med.source_document, med.source_page)} className="text-gray-400 hover:text-blue-600">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" /></svg>
                       </button>
                     </div>
                   </li>
